@@ -98,8 +98,6 @@ public class Manager_Menu : MonoBehaviour
 
     private void Init()
     {
-        //TODO: FIGURE OUT HOW TO NOT HAVE STUPID DUPLICATES ON LOAD BACK
-
         if (menuState.Equals(Enums.MenuState.MENU_MAIN))
         {
             ConnexionMenu(0.0f, 0.0f);

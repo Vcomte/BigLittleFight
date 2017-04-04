@@ -7,13 +7,10 @@ public class PlayerScript : MonoBehaviour
 	#region private Vars
 
 	private int _hitCounter = 0;
-	private int _HpCurrent = 0;
 	private float _powerCurrent = 0.0f;
-    private bool _isStunned = false, _isGrounded = true, _canJump = true, _isDashing = false;
+    private bool _isStunned = false, _isGrounded = true, _canJump = true, _isDashing = false, _isAlive = true;
 	private bool _canAttack = true;
 	private Coroutine _StunCoroutine;
-	private Coroutine _RegenHPCooldownCoroutine;
-	private Coroutine _RegenHPCoroutine;
 	private Coroutine _AttackCoroutine;
 	private Coroutine _ChangeSizeCoroutine;
 	private Coroutine _DashCoroutine;
@@ -40,9 +37,6 @@ public class PlayerScript : MonoBehaviour
     #region accessors
 
     public int qTECurrentPoints		{get{return _QTECurrentPoints;}set{_QTECurrentPoints = value;}}
-	public int hitCounter 			{get{return _hitCounter;}set{_hitCounter = value;}}
-	public int hpCurrent 			{get{return _HpCurrent;}set{_HpCurrent = value;}}
-	public int hpMax 				{get{return _HpMax;}set{_HpMax = value;}}
 
 	public bool isStunned			{get{return _isStunned;}set{_isStunned = value; }}
     public bool canJump             { get { return _canJump; } set { _canJump = value; } }
@@ -53,6 +47,7 @@ public class PlayerScript : MonoBehaviour
 	public bool throwing 			{get{return _throwing;}set{_throwing = value; }}
 	public bool toKill 				{get{return _toKill;}set{_toKill = value;}}
     public bool delayedKill         {get{return _delayedKill; }set{_delayedKill = value;}}
+	public bool isAlive				{get{return _isAlive;}set{_isAlive = value; }}
 
 
     public float powerCurrent 		{get{return _powerCurrent;}set{_powerCurrent = value;}}
@@ -99,6 +94,7 @@ public class PlayerScript : MonoBehaviour
 	[SerializeField] private float _powerRegenRate = 0.0f;
 	[SerializeField] private float _powerDecreaseRate = 0.0f;
 
+	[Header("DASH")]
 	[SerializeField] private GameObject qTECollider = null;
 	[SerializeField] private Vector2 dashForce = Vector2.zero;
 	[SerializeField] private GameObject dashCollider = null;
@@ -120,6 +116,7 @@ public class PlayerScript : MonoBehaviour
 	[SerializeField] private bool _faceLeft = false;
 	[SerializeField] private GameObject _arrow = null;
 	[SerializeField] private float throwForce = 500.0f;
+    [SerializeField] private float timeBeforeDestruction = 4f;
 
 	#endregion
 
@@ -135,19 +132,15 @@ public class PlayerScript : MonoBehaviour
         audioSource = GetComponent<AudioSource>();
 		myAnim = transform.GetChild (0).GetComponent<Animator> ();
 
-		hpCurrent = hpMax;
 		powerCurrent = 0;
-		Manager_Game.Instance.UpdateHealthBars (_playerID.Equals ("P1") ? 1 : 2, hpCurrent, hpMax);
         Manager_Game.Instance.UpdateGoAdvantage(0);
 	}
 
 	private void Update()
 	{
-		if (Manager_Game.Instance.isQTEOngoing || isPaused)
+		if (isPaused)
 			return;
         idleTimer += Time.deltaTime;
-
-        Manager_Game.Instance.UpdateHealthBars (_playerID.Equals ("P1") ? 1 : 2, hpCurrent, hpMax);
 
 		#region SPECIFIC BIG INTERACTIONS
 		if(_SizeCurrent.Equals(Enums.CharSize.SIZE_BIG))
@@ -185,7 +178,7 @@ public class PlayerScript : MonoBehaviour
 
 	private void ResolveInput_Big()
 	{
-		if (canAttack && !isStunned) 
+		if (canAttack && !isStunned && isAlive) 
 		{
 			float attackAxis = Input.GetAxis (_playerID + "Attack");
 			float parryAxis = Input.GetAxis (_playerID + "Parry");
@@ -259,99 +252,87 @@ public class PlayerScript : MonoBehaviour
 
 	private void ResolveInput_Small()
 	{
-		if(powerCurrent > 0.0f)
+		if (isAlive)
 		{
-			powerCurrent -= powerDecreaseRate * Time.deltaTime;
-			Manager_Game.Instance.UpdatePowerBars (_playerID.Equals ("P1") ? 1 : 2, powerCurrent, powerMax);
-		}
-		else if(powerCurrent <= 0.0f)
-		{
-			ChangeSize ();
+			if(powerCurrent > 0.0f)
+			{
+				powerCurrent -= powerDecreaseRate * Time.deltaTime;
+				Manager_Game.Instance.UpdatePowerBars (_playerID.Equals ("P1") ? 1 : 2, powerCurrent, powerMax);
+			}
+			else if(powerCurrent <= 0.0f)
+			{
+				ChangeSize ();
+			}
 		}
 	}
 
 	private void ResolveInput_General()
 	{
-		float horizontal = Input.GetAxis(_playerID + "DirectionX");
-		float vertical = Input.GetAxis(_playerID + "DirectionY");
-
-		// Y BUTTON
-		if (Input.GetButtonDown (_playerID + "YButton") && !isStunned && canAttack) 
+		if (isAlive)
 		{
-			ChangeSize ();
-		}
+			float horizontal = Input.GetAxis(_playerID + "DirectionX");
+			float vertical = Input.GetAxis(_playerID + "DirectionY");
 
-		// MOVEMENT
-		if (!isDashing && !isStunned)
-		{
-			float sSpeed = _SizeCurrent.Equals (Enums.CharSize.SIZE_SMALL) ? smallSpeed : 0f;
-			float ySpeed;
-			bool jump = Input.GetButtonDown (_playerID + "AButton");
-
-			if (jump & _canJump)
+			// Y BUTTON
+			if (Input.GetButtonDown (_playerID + "YButton") && !isStunned && canAttack) 
 			{
-				myAnim.SetBool("isJumping", true);
-                ySpeed = jumpSpeed + sSpeed;
-			} else
-			{
-				myAnim.SetBool("isJumping", false);
-                ySpeed = myBody.velocity.y;
+				ChangeSize ();
 			}
 
-            float attackAxis = Input.GetAxis(_playerID + "Attack");
-            float parryAxis = Input.GetAxis(_playerID + "Parry");
-
-            if (attackAxis < 0.15f && attackAxis > -0.15f && parryAxis < 0.15f && parryAxis > -0.15f)
-            {
-                if (horizontal > 0.25f || horizontal < -0.25f)
-                {
-                    myAnim.SetBool("isRunning", true);
-                    idleTimer = 0.0f;
-                }
-                else
-                {
-                    if (idleTimer > 0.1f)
-                        myAnim.SetBool("isRunning", false);
-                }
-
-                Vector2 velocity = new Vector2(horizontal * (speed + sSpeed), ySpeed);
-                myBody.velocity = velocity;
-            }
-        }
-
-		if (!isStunned)
-		{
-			//Flipping the player vertically
-			if (horizontal > 0.15f && _faceLeft)
+			// MOVEMENT
+			if (!isDashing && !isStunned)
 			{
-				_faceLeft = !_faceLeft;
-				this.gameObject.transform.Rotate (new Vector3 (0, 180, 0));
-			} else if (horizontal < -0.15f && !_faceLeft)
+				float sSpeed = _SizeCurrent.Equals (Enums.CharSize.SIZE_SMALL) ? smallSpeed : 0f;
+				float ySpeed;
+				bool jump = Input.GetButtonDown (_playerID + "AButton");
+
+				if (jump & _canJump)
+				{
+					myAnim.SetBool("isJumping", true);
+	                ySpeed = jumpSpeed + sSpeed;
+				} else
+				{
+					myAnim.SetBool("isJumping", false);
+	                ySpeed = myBody.velocity.y;
+				}
+
+	            float attackAxis = Input.GetAxis(_playerID + "Attack");
+	            float parryAxis = Input.GetAxis(_playerID + "Parry");
+
+	            if (attackAxis < 0.15f && attackAxis > -0.15f && parryAxis < 0.15f && parryAxis > -0.15f)
+	            {
+	                if (horizontal > 0.25f || horizontal < -0.25f)
+	                {
+	                    myAnim.SetBool("isRunning", true);
+	                    idleTimer = 0.0f;
+	                }
+	                else
+	                {
+	                    if (idleTimer > 0.1f)
+	                        myAnim.SetBool("isRunning", false);
+	                }
+
+	                Vector2 velocity = new Vector2(horizontal * (speed + sSpeed), ySpeed);
+	                myBody.velocity = velocity;
+	            }
+	        }
+
+			if (!isStunned)
 			{
-				_faceLeft = !_faceLeft;
-				this.gameObject.transform.Rotate (new Vector3 (0, -180, 0));
-			}
+				//Flipping the player vertically
+				if (horizontal > 0.15f && _faceLeft)
+				{
+					_faceLeft = !_faceLeft;
+					this.gameObject.transform.Rotate (new Vector3 (0, 180, 0));
+				} else if (horizontal < -0.15f && !_faceLeft)
+				{
+					_faceLeft = !_faceLeft;
+					this.gameObject.transform.Rotate (new Vector3 (0, -180, 0));
+				}
 
-			//Vertical commands for aiming
-			if (horizontal > 0.01f || vertical > 0.01f || horizontal < -0.01f || vertical < -0.01f)
-				arrow.transform.up = (new Vector3 (horizontal, vertical, 0f));
-		
-			//Commands for throwing an object
-			if (Input.GetButtonDown (_playerID + "XButton") && throwNextFrame)
-			{
-				toThrow.GetComponent<interactiveItem> ().thrown = true;
-				toThrow.transform.SetParent (null);
-				Rigidbody2D toThrowBody = toThrow.GetComponent<Rigidbody2D> ();
-				toThrowBody.isKinematic = false;
-				toThrowBody.AddForce (arrow.transform.up * throwForce);
-
-				toThrow.transform.GetComponent<Collider2D> ().isTrigger = false;
-
-				toThrow = null;
-				throwing = false;
-				throwNextFrame = false;
-
-				arrow.GetComponentInChildren<SpriteRenderer> ().enabled = false;
+				//Vertical commands for aiming
+				if (horizontal > 0.01f || vertical > 0.01f || horizontal < -0.01f || vertical < -0.01f)
+					arrow.transform.up = (new Vector3 (horizontal, vertical, 0f));
 			}
 		}
 	}
@@ -430,69 +411,19 @@ public class PlayerScript : MonoBehaviour
 		}
 		else
 		{
-			TakeDamage (attackDamage);
+			TakeHit ();
 		}
 	}
 
 	public void TakeHit()
 	{
-		if(_SizeCurrent.Equals(Enums.CharSize.SIZE_BIG))
-            TakeDamage(30);
-	}
-
-	public void TakeDamage(int damageToTake)
-	{
-		if (isStunned)
-			return;
-
-		++hitCounter;
-		if (hitCounter >= 3)
-		{
-			damageToTake *= 3;
-			hitCounter = 0;
-		}
-
-		hpCurrent -= damageToTake;
-		if (_RegenHPCooldownCoroutine != null)
-			StopCoroutine (_RegenHPCooldownCoroutine);
-		if(_RegenHPCoroutine != null)
-			StopCoroutine (_RegenHPCoroutine);
-
-		if (hpCurrent <= 0)
-		{
-			hpCurrent = 0;
-			Stun ();
-		}
-		else
-		{
-			//Then start the timer to regen health
-			_RegenHPCooldownCoroutine = StartCoroutine (RegenHPCooldownCoroutine ());
-		}
-
-		Manager_Game.Instance.UpdateHealthBars (_playerID.Equals ("P1") ? 1 : 2, hpCurrent, hpMax);
-	}
-
-	public void StartHpRegenCooldown()
-	{
-		if (_RegenHPCooldownCoroutine != null)
-			StopCoroutine (_RegenHPCooldownCoroutine);
-
-		_RegenHPCooldownCoroutine = StartCoroutine (RegenHPCooldownCoroutine ());
-	}
-
-	public void RegenHP()
-	{
-		if (_RegenHPCoroutine != null)
-			StopCoroutine (_RegenHPCoroutine);
-		
-		_RegenHPCoroutine = StartCoroutine (RegenHPCoroutine());
+		Stun ();
 	}
 
 	public void Stun()
 	{
-
+		isAlive = false;
 		Manager_Game.Instance.UpdateGoAdvantage(_playerID.Equals("P1") ? 2 : 1);
-		hitCounter = 0;
 		if (_StunCoroutine != null)
 			StopCoroutine (_StunCoroutine);
 
@@ -565,40 +496,6 @@ public class PlayerScript : MonoBehaviour
 		}
 
 		isStunned = false;
-		RegenHP ();
-		yield return null;
-	}
-
-	private IEnumerator RegenHPCooldownCoroutine()
-	{
-		float timer = 0.0f;
-		while(timer < regenCooldown)
-		{
-			timer += Time.deltaTime;
-			yield return null;
-		}
-
-		RegenHP ();
-		yield return null;
-	}
-
-	private IEnumerator RegenHPCoroutine()
-	{
-		float currentLerpTime = 0.0f;
-		float startingHP = (float)hpCurrent;
-
-		while(currentLerpTime < _regenTime)
-		{
-			currentLerpTime += Time.deltaTime;
-			float t = currentLerpTime / regenTime;
-			t = Mathf.Sin(t * Mathf.PI * 0.5f);
-			hpCurrent = Mathf.RoundToInt(Mathf.Lerp(startingHP, hpMax, t));
-
-			Manager_Game.Instance.UpdateHealthBars (_playerID.Equals ("P1") ? 1 : 2, hpCurrent, hpMax);
-			yield return null;
-		}
-
-		hpCurrent = hpMax;
 		yield return null;
 	}
 
@@ -620,11 +517,8 @@ public class PlayerScript : MonoBehaviour
 
         if (attackAxis < 0.15f && attackAxis > -0.15f)
         {
-            //if (directionAxis > -0.15f && directionAxis < 0.15f)
-            //{
             myAnim.SetBool("isKicking", false);
             myAnim.SetBool("isPunching", false);
-            //}
         }
 
         yield return null;
@@ -704,7 +598,7 @@ public class PlayerScript : MonoBehaviour
     IEnumerator killSelf()
     {
         myAnim.Play(playerID.Equals("P1") ? "Antman_Stunned" : "YJ_Stunned");
-        Destroy(this.gameObject, delayedKill ? 2 : 0);
+        Destroy(this.gameObject, delayedKill ? timeBeforeDestruction : 0f);
         yield return null;
     }
 
@@ -759,7 +653,7 @@ public class PlayerScript : MonoBehaviour
 	{
 		if (c.gameObject.CompareTag (playerID.Equals("P1")? "Player2DashCollider" : "Player1DashCollider"))
 		{
-			TakeDamage (Mathf.RoundToInt(c.transform.parent.GetComponent<PlayerScript> ().dashDamage));
+			TakeHit ();
 		}
 	}
 	#endregion

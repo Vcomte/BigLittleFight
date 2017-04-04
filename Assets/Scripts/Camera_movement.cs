@@ -12,6 +12,7 @@ public class Camera_movement : MonoBehaviour {
     private int previous_room = 0;
     private Vector3 originalPosition = Vector3.zero;
 	private float yOffset = 0.0f;
+    private float initialSize;
 
     public int roomNumber { get { return _roomNumber; } set { _roomNumber = value; } }
 
@@ -25,11 +26,13 @@ public class Camera_movement : MonoBehaviour {
 		_roomSize = room.transform.GetChild (0).gameObject.GetComponent<SpriteRenderer> ().bounds.size.x +
 			room.transform.GetChild (1).gameObject.GetComponent<Collider2D> ().bounds.size.x * 2;
 		_roomHeight = room.transform.GetChild (0).gameObject.GetComponent<SpriteRenderer> ().bounds.size.y;
+        initialSize = this.GetComponent<Camera>().orthographicSize;
     }
 
 	// Update is called once per frame
-	void FixedUpdate () {
-        if( previous_room != roomNumber)
+	void FixedUpdate () 
+	{
+        if(previous_room != roomNumber)
         {
 			Vector3 target = Vector3.zero;
 
@@ -43,7 +46,6 @@ public class Camera_movement : MonoBehaviour {
 			this.transform.position = Vector3.Lerp(this.transform.position, target, 0.05f);
 
 			if (Mathf.Abs(this.transform.position.x - target.x) < 0.02f && Mathf.Abs(this.transform.position.y - target.y) < 0.02f) {
-				Debug.Log ("Start following");
 				previous_room = roomNumber;
 			}
         }
@@ -61,11 +63,20 @@ public class Camera_movement : MonoBehaviour {
 
             Vector3 camPosition = this.transform.position;
 
+            float newSize = this.GetComponent<Camera>().orthographicSize;
+            float differenceX = Mathf.Abs(player1.transform.position.x - player2.transform.position.x) - 14.6f;
+            if(differenceX > 1f) {
+                newSize = initialSize + Mathf.Log(differenceX);
+            }else
+            {
+                newSize = initialSize;
+            }
+
             Vector3 player1RelativePosition = new Vector3(player1.transform.position.x, camPosition.y, camPosition.z);
             Vector3 player2RelativePosition = new Vector3(player2.transform.position.x, camPosition.y, camPosition.z);
 
+            this.GetComponent<Camera>().orthographicSize = newSize;
             this.transform.position = Vector3.Lerp(this.transform.position, (player1RelativePosition - player2RelativePosition) * 0.5f + player2RelativePosition, 0.05f);
-                
         }
     }
 }
